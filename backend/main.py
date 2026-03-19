@@ -2,16 +2,17 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from openai import OpenAI
+import asyncio
 import os
 import json
 
-# Load environment variables
+# -----------------------------
+# Setup
+# -----------------------------
 load_dotenv()
 
-# Initialize app
 app = FastAPI(title="TalentLens AI")
 
-# Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
@@ -32,30 +33,30 @@ def health_check():
 
 
 # -----------------------------
-# AI Evaluation Endpoint
+# Main Evaluation Endpoint
 # -----------------------------
 @app.post("/evaluate")
-def evaluate_candidate(payload: EvaluationRequest):
+async def evaluate_candidate(payload: EvaluationRequest):
     try:
-        prompt = build_prompt(payload.resume, payload.job_description)
+        print("🚀 Starting evaluation...")
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.3,
-            messages=[
-                {"role": "system", "content": "You are a precise AI recruiter."},
-                {"role": "user", "content": prompt},
-            ],
+        # Run extraction in parallel
+        job_data, candidate_data = await asyncio.gather(
+            extract_job_requirements(payload.job_description),
+            extract_candidate_profile(payload.resume)
         )
 
-        content = response.choices[0].message.content
+        print("✅ Job extracted")
+        print("✅ Candidate extracted")
 
-        # Try parsing response into JSON
-        parsed = safe_parse_json(content)
+        # Final evaluation (depends on both)
+        evaluation_result = await evaluate_match(job_data, candidate_data)
+
+        print("🎯 Evaluation complete")
 
         return {
             "success": True,
-            "data": parsed if parsed else content
+            "data": evaluation_result
         }
 
     except Exception as e:
@@ -63,40 +64,87 @@ def evaluate_candidate(payload: EvaluationRequest):
 
 
 # -----------------------------
-# Prompt Builder (clean separation)
+# Step 1: Extract Job Requirements
 # -----------------------------
-def build_prompt(resume: str, job_description: str) -> str:
-    return f"""
-You are an AI recruiter evaluating a candidate.
+async def extract_job_requirements(job_description: str):
+    prompt = f"""
+Extract key requirements from this job description.
 
-Follow these steps:
-1. Extract key requirements from the job description
-2. Analyze the candidate's resume
-3. Compare candidate skills with job requirements
-4. Assign a score from 0 to 100
-5. Provide strengths, weaknesses, and a hiring recommendation
-
-Return ONLY valid JSON in this format:
+Return JSON:
 {{
-  "score": number,
-  "strengths": ["..."],
-  "weaknesses": ["..."],
-  "recommendation": "..."
+  "skills": [],
+  "experience": [],
+  "tools": []
 }}
 
 Job Description:
 {job_description}
+"""
+    return await call_llm(prompt)
+
+
+# -----------------------------
+# Step 2: Extract Candidate Profile
+# -----------------------------
+async def extract_candidate_profile(resume: str):
+    prompt = f"""
+Extract candidate details from this resume.
+
+Return JSON:
+{{
+  "skills": [],
+  "experience": [],
+  "projects": []
+}}
 
 Resume:
 {resume}
 """
+    return await call_llm(prompt)
 
 
 # -----------------------------
-# JSON Safety Parser
+# Step 3: Evaluate Match
 # -----------------------------
-def safe_parse_json(content: str):
-    try:
-        return json.loads(content)
-    except Exception:
-        return None
+async def evaluate_match(job_data: dict, candidate_data: dict):
+    prompt = f"""
+You are an AI recruiter evaluating a candidate.
+
+Job Requirements:
+{json.dumps(job_data, indent=2)}
+
+Candidate Profile:
+{json.dumps(candidate_data, indent=2)}
+
+Evaluate the match and return JSON:
+{{
+  "score": number,
+  "strengths": [],
+  "weaknesses": [],
+  "recommendation": ""
+}}
+"""
+    return await call_llm(prompt)
+
+
+# -----------------------------
+# LLM Call Helper
+# -----------------------------
+async def call_llm(prompt: str):
+    response = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.2,
+        response_format={"type": "json_object"},
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a structured AI recruiter system. Always return valid JSON only."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            },
+        ],
+    )
+
+    return json.loads(response.choices[0].message.content)

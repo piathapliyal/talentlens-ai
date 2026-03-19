@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from openai import OpenAI
+from google import genai
+from pathlib import Path
 import asyncio
 import os
 import json
@@ -9,15 +10,18 @@ import json
 # -----------------------------
 # Setup
 # -----------------------------
-load_dotenv()
+env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 app = FastAPI(title="TalentLens AI")
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+
 
 
 # -----------------------------
-# Request Schema
+# Request Schemas
 # -----------------------------
 class EvaluationRequest(BaseModel):
     resume: str
@@ -28,6 +32,7 @@ class BatchEvaluationRequest(BaseModel):
     resumes: list[str]
     job_description: str
 
+
 # -----------------------------
 # Health Check
 # -----------------------------
@@ -37,15 +42,12 @@ def health_check():
 
 
 # -----------------------------
-# Main Evaluation Endpoint
+# Single Candidate Evaluation
 # -----------------------------
 @app.post("/evaluate")
 async def evaluate_candidate(payload: EvaluationRequest):
     try:
         print("Starting evaluation...")
-        print("Job extracted")
-        print("Candidate extracted")
-        print("Evaluation complete")
 
         # Run extraction in parallel
         job_data, candidate_data = await asyncio.gather(
@@ -53,26 +55,29 @@ async def evaluate_candidate(payload: EvaluationRequest):
             extract_candidate_profile(payload.resume)
         )
 
-        print("✅ Job extracted")
-        print("✅ Candidate extracted")
+        print("Extraction complete")
 
-        # Final evaluation (depends on both)
-        evaluation_result = await evaluate_match(job_data, candidate_data)
+        # Final evaluation
+        evaluation = await evaluate_match(job_data, candidate_data)
 
-        print("🎯 Evaluation complete")
+        print("Evaluation complete")
 
         return {
             "success": True,
-            "data": evaluation_result
+            "data": evaluation
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# -----------------------------
+# Batch Evaluation + Ranking
+# -----------------------------
 @app.post("/evaluate/rank")
 async def evaluate_and_rank(payload: BatchEvaluationRequest):
     try:
-        print(f"🚀 Evaluating {len(payload.resumes)} candidates...")
+        print(f"Evaluating {len(payload.resumes)} candidates")
 
         # Extract job requirements once
         job_data = await extract_job_requirements(payload.job_description)
@@ -85,13 +90,13 @@ async def evaluate_and_rank(payload: BatchEvaluationRequest):
 
         results = await asyncio.gather(*tasks)
 
-        # Rank candidates by score
-      
+        # Sort by score safely
         ranked = sorted(
             results,
             key=lambda x: float(x.get("score", 0)),
             reverse=True
-           )
+        )
+
         return {
             "success": True,
             "top_candidate": ranked[0] if ranked else None,
@@ -101,8 +106,9 @@ async def evaluate_and_rank(payload: BatchEvaluationRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # -----------------------------
-# Step 1: Extract Job Requirements
+# AI Pipeline Steps
 # -----------------------------
 async def extract_job_requirements(job_description: str):
     prompt = f"""
@@ -121,9 +127,6 @@ Job Description:
     return await call_llm(prompt)
 
 
-# -----------------------------
-# Step 2: Extract Candidate Profile
-# -----------------------------
 async def extract_candidate_profile(resume: str):
     prompt = f"""
 Extract candidate details from this resume.
@@ -141,9 +144,6 @@ Resume:
     return await call_llm(prompt)
 
 
-# -----------------------------
-# Step 3: Evaluate Match
-# -----------------------------
 async def evaluate_match(job_data: dict, candidate_data: dict):
     prompt = f"""
 You are an AI recruiter evaluating a candidate.
@@ -154,7 +154,7 @@ Job Requirements:
 Candidate Profile:
 {json.dumps(candidate_data, indent=2)}
 
-Evaluate the match and return JSON:
+Return JSON:
 {{
   "score": number,
   "strengths": [],
@@ -164,43 +164,49 @@ Evaluate the match and return JSON:
 """
     return await call_llm(prompt)
 
+
 async def process_candidate(resume: str, job_data: dict):
     candidate_data = await extract_candidate_profile(resume)
-    evaluation = await evaluate_match(job_data, candidate_data)
-    return evaluation
+    return await evaluate_match(job_data, candidate_data)
+
+
 # -----------------------------
-# LLM Call Helper
+# LLM Helper (Gemini)
 # -----------------------------
 async def call_llm(prompt: str):
     """
-    Executes LLM call in a non-blocking way using a thread pool.
-    Ensures compatibility with FastAPI async routes.
+    Executes Gemini call safely and extracts valid JSON from response.
     """
     loop = asyncio.get_running_loop()
 
     def _make_request():
-        return client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.2,
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a structured AI recruiter system. Always return valid JSON only."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                },
-            ],
-        )
+         response = client.models.generate_content(
+         model="gemini-2.5-flash",
+         contents=prompt,
+         )
+         return response.text 
 
     try:
-        response = await loop.run_in_executor(None, _make_request)
-        return json.loads(response.choices[0].message.content)
+        raw_output = await loop.run_in_executor(None, _make_request)
+
+        cleaned = raw_output.strip()
+
+        # Remove markdown blocks if present
+        if "```" in cleaned:
+            cleaned = cleaned.replace("```json", "").replace("```", "").strip()
+
+        # Extract JSON portion
+        start = cleaned.find("{")
+        end = cleaned.rfind("}") + 1
+
+        if start == -1 or end == -1:
+            raise ValueError("No valid JSON found in response")
+
+        json_str = cleaned[start:end]
+
+        return json.loads(json_str)
 
     except Exception as e:
-        print("LLM call failed:", str(e))
+        print("Gemini parsing failed:", str(e))
+        print("Raw output:", raw_output)
         raise
-
-   

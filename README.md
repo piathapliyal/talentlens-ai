@@ -1,75 +1,103 @@
-# TalentLens AI
+# TalentLens AI 🚀
 
-TalentLens AI is a backend system that evaluates how well a candidate’s resume matches a job description using AI.
+TalentLens AI is an AI-powered backend system that evaluates how well a candidate’s resume matches a job description and ranks candidates accordingly.
 
-Instead of manually screening resumes, this system automatically analyzes candidates, assigns a score, and even ranks multiple candidates — similar to how an AI recruiter would work.
+It simulates a real-world **AI recruiter workflow**, where resumes are analyzed, structured, and scored automatically using LLMs.
 
 ---
 
-## What this project does
+## 💡 What it does
 
-* Takes a resume and a job description
-* Extracts important skills and requirements
-* Compares both using an AI model
-* Returns:
+* Parses job descriptions to extract requirements
+* Analyzes resumes to extract candidate profiles
+* Compares candidates against job requirements
+* Generates:
 
   * match score (0–100)
   * strengths
   * weaknesses
   * hiring recommendation
-
-It can also evaluate multiple candidates at once and rank them based on how well they fit the role.
-
----
-
-## Why I built this
-
-I wanted to understand how AI can be used in real-world systems beyond simple chatbots.
-
-This project simulates an **AI recruiter workflow**, where:
-
-* raw text is converted into structured data
-* multiple AI steps are combined into a pipeline
-* results are processed and ranked
+* Ranks multiple candidates based on fit
 
 ---
 
-## Tech Stack
+## 🧠 Why this project
 
-* Python
-* FastAPI
-* Gemini (Google AI)
-* AsyncIO (for parallel processing)
-* Pydantic
+Most AI projects stop at simple chat interfaces.
 
----
+This project focuses on:
 
-## How it works (simple)
-
-The system runs in 3 steps:
-
-1. **Job Analysis**
-   Extracts required skills, tools, and experience from the job description
-
-2. **Candidate Analysis**
-   Extracts skills, experience, and projects from the resume
-
-3. **Evaluation**
-   Compares both and generates a score + feedback
-
-For multiple candidates, everything runs in parallel and gets ranked automatically.
+* building a **multi-step AI system**
+* structuring unstructured data (resume → JSON)
+* designing a pipeline closer to real-world products
 
 ---
 
-## API Endpoints
+## ⚙️ Tech Stack
 
-### Evaluate one candidate
+* **Backend:** FastAPI
+* **Language:** Python
+* **AI:** Gemini (Google GenAI)
+* **Concurrency:** AsyncIO (parallel execution)
+* **Validation:** Pydantic
 
-POST `/evaluate`
+---
+
+## 🏗️ System Design
+
+The system is built as a pipeline of independent steps:
+
+### 1. Job Requirement Extraction
+
+Extracts structured data from job descriptions:
+
+* skills
+* tools
+* experience
+
+### 2. Candidate Profiling
+
+Extracts structured information from resumes:
+
+* skills
+* experience
+* projects
+
+### 3. Evaluation Engine
+
+Compares job requirements with candidate data and generates:
+
+* score
+* strengths
+* weaknesses
+* recommendation
+
+### 4. Ranking Engine
+
+* Processes multiple candidates in parallel
+* Sorts candidates based on score
+
+---
+
+## ⚡ Key Features
+
+* Async parallel processing using `asyncio.gather`
+* Modular AI pipeline design
+* Robust handling of inconsistent LLM outputs
+* Batch evaluation + ranking system
+* Clean API design with FastAPI
+
+---
+
+## 📡 API Endpoints
+
+### Evaluate a single candidate
+
+**POST** `/evaluate`
 
 ```json
 {
-  "resume": "Your resume text",
+  "resume": "Candidate resume text",
   "job_description": "Job description text"
 }
 ```
@@ -78,7 +106,7 @@ POST `/evaluate`
 
 ### Evaluate and rank multiple candidates
 
-POST `/evaluate/rank`
+**POST** `/evaluate/rank`
 
 ```json
 {
@@ -93,7 +121,7 @@ POST `/evaluate/rank`
 
 ---
 
-## How to run locally
+## 🧪 Run Locally
 
 ```bash
 git clone <your-repo-url>
@@ -122,23 +150,25 @@ http://127.0.0.1:8000/docs
 
 ---
 
-## What I focused on
+## 🎯 What this project demonstrates
 
-* Building a clean AI pipeline instead of a single API call
-* Handling messy AI outputs (JSON parsing issues)
-* Running tasks in parallel for better performance
-* Designing something close to a real-world use case
+* Designing AI systems beyond simple prompts
+* Working with LLM limitations (non-structured outputs)
+* Building scalable backend APIs
+* Applying concurrency for performance
+* Structuring real-world problem pipelines
 
 ---
 
-## Future improvements
+## 🚀 Future Improvements
 
-* Add a simple frontend UI
-* Store results in a database
+* Add lightweight frontend for interaction
+* Store evaluations in a database
 * Improve scoring logic with feedback loops
+* Add authentication & user sessions
 
 ---
 
-## Final note
+## 📌 Note
 
-This project is not just about calling an AI model — it's about designing a system around it.
+This project focuses on system design and backend AI workflows rather than UI, reflecting how real AI-powered services are built.
